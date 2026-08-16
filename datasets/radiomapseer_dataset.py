@@ -6,6 +6,10 @@ Data structure:
   - data/antenna/{id}.json                -> 80 Tx positions [[x,y], ...]
   - data/gain/{method}/{id}_{tx}.png      -> gain/radio map (256x256, grayscale)
 
+RadioMapSeer stores Tx coordinates with a bottom-left origin, while image
+arrays use a top-left origin. Tx coordinates are converted at load time so
+all downstream heatmaps and physical priors use image coordinates.
+
 Each sample: (building_map, antenna_heatmap, gain_map)
   - building_map: 1-channel, 256x256
   - antenna_heatmap: 1-channel, 256x256 (Gaussian blob at Tx position)
@@ -130,6 +134,26 @@ class RadioMapSeerDataset(Dataset):
         heatmap = np.exp(-((xx - tx_x) ** 2 + (yy - tx_y) ** 2) / (2 * sigma ** 2))
         return heatmap
 
+    @staticmethod
+    def _to_image_coordinates(tx_x, tx_y, image_shape):
+        """Convert bottom-left-origin Tx coordinates to image coordinates."""
+        height, width = image_shape
+
+        try:
+            tx_x = float(tx_x)
+            tx_y = float(tx_y)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid Tx coordinates: ({tx_x}, {tx_y})") from exc
+
+        if not (0 <= tx_x < width and 0 <= tx_y < height):
+            raise ValueError(
+                f"Tx coordinates ({tx_x}, {tx_y}) are outside image bounds "
+                f"{width}x{height}"
+            )
+
+        # JSON y increases upward; NumPy/PIL row indices increase downward.
+        return tx_x, float(height - 1) - tx_y
+
     def __len__(self):
         return len(self.samples)
 
@@ -144,7 +168,10 @@ class RadioMapSeerDataset(Dataset):
         antenna_file = self.antenna_dir / f"{map_id}.json"
         with open(antenna_file, "r") as f:
             positions = json.load(f)
-        tx_x, tx_y = positions[tx_idx]
+        tx_x_raw, tx_y_raw = positions[tx_idx]
+        tx_x, tx_y = self._to_image_coordinates(
+            tx_x_raw, tx_y_raw, building.shape
+        )
 
         # Create antenna heatmap
         antenna_heatmap = self._create_antenna_heatmap(tx_x, tx_y)
