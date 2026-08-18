@@ -95,6 +95,29 @@ must fit on that GPU:
 python training/train.py --config configs/config.yaml --gpus 0
 ```
 
+Train the Physics-L1 refinement with four-GPU DDP in two stages. First
+warm-start from the trained L1 baseline and retain the 20-epoch ablation:
+
+```bash
+torchrun --standalone --nproc_per_node=4 training/train_physics.py \
+  --config configs/config_ablation.yaml \
+  --resume outputs/checkpoints/best_model.pth
+```
+
+Then continue the same Physics-L1 optimizer and scheduler state from epoch 20
+through epoch 50:
+
+```bash
+torchrun --standalone --nproc_per_node=4 training/train_physics.py \
+  --config configs/config_ablation_50ep.yaml \
+  --resume outputs/improved_checkpoints/final_model.pth
+```
+
+Physics-L1 checkpoints and TensorBoard logs are written to
+`outputs/improved_checkpoints` and `outputs/logs_physics`, respectively. Add
+`--smoke-test-batches 50` to the first command to verify the setup without
+writing either output.
+
 Run inference with a trained checkpoint:
 
 ```bash

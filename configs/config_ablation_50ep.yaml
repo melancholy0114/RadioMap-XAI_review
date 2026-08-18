@@ -8,7 +8,7 @@ data:
   train_ratio: 0.7
   val_ratio: 0.15
   test_ratio: 0.15
-  num_workers: 4
+  num_workers: 4              # per process (16 workers total with 4-process DDP)
   pin_memory: true
 
 # Model settings
@@ -25,16 +25,18 @@ model:
 
 # Training settings
 training:
-  batch_size: 8
+  batch_size: 8                 # global batch; 4-process DDP uses 2 samples/GPU
   epochs: 50
-  full_resume: true
+  full_resume: true             # continue optimizer/scheduler from Physics-L1 epoch 20
   lr: 0.0002
   weight_decay: 0.0001
   scheduler: "CosineAnnealingLR"
   T_max: 50
   eta_min: 0.0000001
   grad_clip: 0.01
-  grad_accum_steps: 4
+  grad_accum_steps: 4           # effective batch = 8 * 4 = 32
+  amp_init_scale: 1.0
+  log_interval: 50
   seed: 42
   resume: null
 
@@ -47,6 +49,8 @@ loss:
 output:
   checkpoint_dir: "./outputs/checkpoints"
   log_dir: "./outputs/logs"
+  physics_checkpoint_dir: "./outputs/improved_checkpoints"
+  physics_log_dir: "./outputs/logs_physics"
   prediction_dir: "./outputs/predictions"
   explanation_dir: "./outputs/explanations"
   figure_dir: "./outputs/figures"
