@@ -60,10 +60,39 @@ By default, the code expects `data.root_dir` in `configs/config.yaml` to point t
 
 ## Quick Start
 
-Train a baseline model:
+Run a short four-GPU DDP smoke test first. The smoke test does not write
+checkpoints or TensorBoard logs:
 
 ```bash
-python training/train.py --config configs/config.yaml
+torchrun --standalone --nproc_per_node=4 training/train.py \
+  --config configs/config.yaml \
+  --smoke-test-batches 50
+```
+
+Train the baseline model with four GPUs:
+
+```bash
+torchrun --standalone --nproc_per_node=4 training/train.py \
+  --config configs/config.yaml
+```
+
+`training.batch_size` is the global batch size. With the default value of 8,
+four DDP processes load 2 samples per GPU. Gradient accumulation is 4, so the
+effective batch size remains 32. The global batch size must be divisible by
+the number of DDP processes.
+
+To select specific GPUs, expose them before launching `torchrun`:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc_per_node=4 \
+  training/train.py --config configs/config.yaml
+```
+
+Single-GPU training remains available, but the configured global batch size
+must fit on that GPU:
+
+```bash
+python training/train.py --config configs/config.yaml --gpus 0
 ```
 
 Run inference with a trained checkpoint:

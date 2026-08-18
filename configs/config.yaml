@@ -8,7 +8,7 @@ data:
   train_ratio: 0.7
   val_ratio: 0.15
   test_ratio: 0.15
-  num_workers: 4
+  num_workers: 4              # per process (16 workers total with 4-process DDP)
   pin_memory: true
 
 # Model settings
@@ -25,7 +25,7 @@ model:
 
 # Training settings
 training:
-  batch_size: 8                 # 4 GPUs x 2 per GPU
+  batch_size: 8                 # global batch; 4-process DDP uses 2 samples/GPU
   epochs: 50
   lr: 0.0002                    # scaled up for larger effective batch
   weight_decay: 0.0001
@@ -34,6 +34,8 @@ training:
   eta_min: 0.0000001
   grad_clip: 0.01
   grad_accum_steps: 4           # effective batch = 8 * 4 = 32
+  amp_init_scale: 1.0           # fp16 gradients overflow at PyTorch's 65536 default
+  log_interval: 50              # print progress and ETA every N batches
   seed: 42
   resume: null
 

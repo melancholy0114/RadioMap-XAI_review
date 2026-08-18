@@ -24,7 +24,7 @@ from PIL import Image
 from pathlib import Path
 
 import torch
-from torch.utils.data import Dataset, DataLoader, Subset
+from torch.utils.data import Dataset, DataLoader, DistributedSampler, Subset
 from torchvision import transforms
 
 
@@ -214,9 +214,36 @@ class RadioMapSeerDataset(Dataset):
         }
 
 
-def get_dataloaders(config):
-    """Create train/val/test dataloaders from config."""
+def _select_subset(dataset, fraction, seed):
+    """Select the same deterministic subset in every distributed process."""
+    if not 0 < fraction <= 1:
+        raise ValueError(f"subset fraction must be in (0, 1], got {fraction}")
+    if fraction == 1:
+        return dataset
+
+    subset_size = max(1, int(len(dataset) * fraction))
+    generator = torch.Generator().manual_seed(seed)
+    indices = torch.randperm(len(dataset), generator=generator)[:subset_size]
+    return Subset(dataset, indices.tolist())
+
+
+def get_dataloaders(
+    config,
+    *,
+    batch_size=None,
+    distributed=False,
+    rank=0,
+    world_size=1,
+    subset_frac=1.0,
+):
+    """Create train/val/test dataloaders for single-process or DDP training.
+
+    ``batch_size`` is the number of samples loaded by the current process. In
+    DDP mode the training entry point derives it from the configured global
+    batch size before calling this function.
+    """
     data_cfg = config["data"]
+    per_process_batch_size = batch_size or config["training"]["batch_size"]
 
     train_dataset = RadioMapSeerDataset(
         root_dir=data_cfg["root_dir"],
@@ -248,10 +275,42 @@ def get_dataloaders(config):
         seed=config["training"]["seed"],
     )
 
+    seed = int(config["training"]["seed"])
+    train_dataset = _select_subset(train_dataset, subset_frac, seed)
+    val_dataset = _select_subset(val_dataset, subset_frac, seed + 1)
+
+    train_sampler = None
+    val_sampler = None
+    test_sampler = None
+    if distributed:
+        train_sampler = DistributedSampler(
+            train_dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=True,
+            seed=seed,
+            drop_last=True,
+        )
+        val_sampler = DistributedSampler(
+            val_dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=False,
+            drop_last=False,
+        )
+        test_sampler = DistributedSampler(
+            test_dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=False,
+            drop_last=False,
+        )
+
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config["training"]["batch_size"],
-        shuffle=True,
+        batch_size=per_process_batch_size,
+        shuffle=train_sampler is None,
+        sampler=train_sampler,
         num_workers=data_cfg["num_workers"],
         pin_memory=data_cfg["pin_memory"],
         drop_last=True,
@@ -259,8 +318,9 @@ def get_dataloaders(config):
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=config["training"]["batch_size"],
+        batch_size=per_process_batch_size,
         shuffle=False,
+        sampler=val_sampler,
         num_workers=data_cfg["num_workers"],
         pin_memory=data_cfg["pin_memory"],
     )
@@ -269,6 +329,7 @@ def get_dataloaders(config):
         test_dataset,
         batch_size=1,
         shuffle=False,
+        sampler=test_sampler,
         num_workers=data_cfg["num_workers"],
         pin_memory=data_cfg["pin_memory"],
     )
