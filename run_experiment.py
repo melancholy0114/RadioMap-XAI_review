@@ -24,7 +24,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from model.radio_map_model import Restormer
 from datasets.radiomapseer_dataset import RadioMapSeerDataset
 from torch.utils.data import DataLoader
 from inference.infer import load_model
@@ -89,7 +88,7 @@ def main():
 
     # Step 3: Initialize explainers and metrics
     explainer_ig = IntegratedGradients(model, device)
-    explainer_cam = GradCAM(model, model.refinement[-1], device)
+    explainer_cam = GradCAM(model, device=device)
     explainer_occ = OcclusionSensitivity(model, device)
 
     pas_evaluator = PhysicalAlignmentScore()

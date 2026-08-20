@@ -14,7 +14,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from model.radio_map_model import Restormer
+from model import build_model, normalize_state_dict, validate_checkpoint_model
 from datasets.radiomapseer_dataset import RadioMapSeerDataset
 from torch.utils.data import DataLoader
 from torch.amp import autocast
@@ -30,21 +30,11 @@ def parse_args():
 
 
 def load_model(config, checkpoint_path, device):
-    model_cfg = config["model"]
-    model = Restormer(
-        inp_channels=model_cfg["inp_channels"],
-        out_channels=model_cfg["out_channels"],
-        dim=model_cfg["dim"],
-        num_blocks=model_cfg["num_blocks"],
-        num_refinement_blocks=model_cfg["num_refinement_blocks"],
-        heads=model_cfg["heads"],
-        ffn_expansion_factor=model_cfg["ffn_expansion_factor"],
-        bias=model_cfg["bias"],
-        LayerNorm_type=model_cfg["LayerNorm_type"],
-    ).to(device)
+    model = build_model(config["model"]).to(device)
 
     ckpt = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(ckpt["model_state_dict"])
+    validate_checkpoint_model(ckpt, model)
+    model.load_state_dict(normalize_state_dict(ckpt["model_state_dict"]))
     model.eval()
     return model
 
@@ -59,7 +49,7 @@ def run_inference(model, dataset, device, num_samples=10, save_dir="outputs/pred
         sample = dataset[int(idx)]
         inputs = sample["input"].unsqueeze(0).to(device)
 
-        with torch.no_grad(), autocast("cuda"):
+        with torch.no_grad(), autocast("cuda", enabled=device.type == "cuda"):
             pred = model(inputs)
 
         pred_np = pred[0, 0].cpu().numpy()

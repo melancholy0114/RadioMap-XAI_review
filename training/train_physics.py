@@ -1,6 +1,6 @@
 """Physics-weighted L1 training with single-GPU and DDP support.
 
-The network architecture and data split match the L1 baseline. Physics-L1
+The configured backbone and data split must match the L1 baseline. Physics-L1
 changes only the training loss by upweighting LoS and near-transmitter pixels.
 
 Typical two-stage workflow:
@@ -40,7 +40,13 @@ import yaml
 
 from datasets.radiomapseer_dataset import get_dataloaders
 from losses.loss import PhysicsWeightedL1Loss
-from model.radio_map_model import Restormer
+from model import (
+    build_model,
+    checkpoint_metadata,
+    get_model_name,
+    normalize_state_dict,
+    validate_checkpoint_model,
+)
 from priors.los_mask import compute_los_mask_fast
 from training.validate import validate
 
@@ -164,14 +170,6 @@ def unwrap_model(model):
     return model.module if isinstance(model, DDP) else model
 
 
-def normalize_state_dict(state_dict):
-    """Accept weights saved from plain, DataParallel, or DDP models."""
-    return {
-        key.removeprefix("module."): value
-        for key, value in state_dict.items()
-    }
-
-
 def process_rss_gib():
     try:
         with open("/proc/self/status", "r") as handle:
@@ -227,6 +225,7 @@ def save_physics_checkpoint(
         "best_val_loss": best_val_loss,
         "training_variant": _TRAINING_VARIANT,
         "physics_alpha": physics_alpha,
+        **checkpoint_metadata(model),
     }
     torch.save(state, path)
 
@@ -245,6 +244,7 @@ def restore_physics_checkpoint(
         raise FileNotFoundError(f"Checkpoint not found: {path}")
 
     checkpoint = torch.load(path, map_location=device)
+    validate_checkpoint_model(checkpoint, model)
     unwrap_model(model).load_state_dict(
         normalize_state_dict(checkpoint["model_state_dict"])
     )
@@ -368,18 +368,9 @@ def train_physics(
         f"Train: {len(train_loader.dataset)} samples, Val: {len(val_loader.dataset)} samples",
     )
 
-    model_config = config["model"]
-    model = Restormer(
-        inp_channels=model_config["inp_channels"],
-        out_channels=model_config["out_channels"],
-        dim=model_config["dim"],
-        num_blocks=model_config["num_blocks"],
-        num_refinement_blocks=model_config["num_refinement_blocks"],
-        heads=model_config["heads"],
-        ffn_expansion_factor=model_config["ffn_expansion_factor"],
-        bias=model_config["bias"],
-        LayerNorm_type=model_config["LayerNorm_type"],
-    ).to(device)
+    model = build_model(config["model"]).to(device)
+    backbone_name = get_model_name(model)
+    main_print(rank, f"Backbone: {backbone_name}")
 
     if distributed:
         model = DDP(

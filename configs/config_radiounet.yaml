@@ -1,0 +1,65 @@
+# RadioUNet_C baseline trained with L1 loss
+
+data:
+  root_dir: "./data"
+  gain_method: "DPM"
+  img_size: 256
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  num_workers: 4              # per process (16 workers total with 4-process DDP)
+  pin_memory: true
+
+# RadioUNet_C is kept separate from Restormer model settings. It consumes the
+# complete building map and Tx heatmap, without sparse radio measurements.
+model:
+  name: "radiounet_c"
+  inp_channels: 2
+  out_channels: 1
+
+# Match the existing Restormer protocol for a controlled backbone comparison.
+training:
+  batch_size: 8              # global batch; 4-process DDP uses 2 samples/GPU
+  epochs: 50
+  lr: 0.0002
+  weight_decay: 0.0001
+  scheduler: "CosineAnnealingLR"
+  T_max: 50
+  eta_min: 0.0000001
+  grad_clip: 0.01
+  grad_accum_steps: 4        # effective batch = 8 * 4 = 32
+  amp_init_scale: 1.0
+  log_interval: 50
+  seed: 42
+  resume: null
+
+loss:
+  primary: "l1"
+
+# A model-specific subtree prevents RadioUNet runs from overwriting Restormer.
+output:
+  checkpoint_dir: "./outputs/radiounet_c/l1/checkpoints"
+  log_dir: "./outputs/radiounet_c/l1/logs"
+  prediction_dir: "./outputs/radiounet_c/l1/predictions"
+  explanation_dir: "./outputs/radiounet_c/l1/explanations"
+  figure_dir: "./outputs/radiounet_c/figures"
+
+explainability:
+  methods:
+    - "integrated_gradients"
+    - "grad_cam"
+    - "occlusion_sensitivity"
+  num_samples: 50
+  ig_steps: 50
+  occlusion_stride: 8
+  occlusion_window: 16
+
+priors:
+  los_bandwidth: 3
+  directional_sectors: 8
+
+metrics:
+  faithfulness_top_k: [1, 5, 10, 20, 30]
+  stability_noise_std: 0.01
+  stability_num_samples: 10
+

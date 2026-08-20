@@ -13,6 +13,7 @@ data:
 
 # Model settings
 model:
+  name: "restormer"
   inp_channels: 2
   out_channels: 1
   dim: 48

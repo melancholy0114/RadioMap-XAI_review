@@ -26,7 +26,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 
-from model.radio_map_model import Restormer
 from datasets.radiomapseer_dataset import RadioMapSeerDataset
 from explanation import IntegratedGradients, GradCAM, OcclusionSensitivity
 from inference.infer import load_model
@@ -130,7 +129,7 @@ def run_visualization(config, checkpoint_path, num_samples=10, save_dir="outputs
 
     # Initialize explainers
     expl_ig = IntegratedGradients(model, device)
-    expl_cam = GradCAM(model, model.refinement[-1], device)
+    expl_cam = GradCAM(model, device=device)
     expl_occ = OcclusionSensitivity(model, device)
 
     ig_steps = config["explainability"]["ig_steps"]

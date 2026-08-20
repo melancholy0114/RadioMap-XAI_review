@@ -9,15 +9,18 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from model import get_gradcam_target_layer
+
 
 class GradCAM:
     def __init__(self, model, target_layer=None, device="cuda"):
         self.model = model
         self.device = device
 
-        # Default: use the last refinement block
+        # Each backbone registers a comparable late, full-resolution feature
+        # layer through the shared model helper.
         if target_layer is None:
-            target_layer = model.refinement[-1]
+            target_layer = get_gradcam_target_layer(model)
 
         self.target_layer = target_layer
         self.gradients = None

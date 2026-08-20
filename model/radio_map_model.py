@@ -1,10 +1,7 @@
-"""
-Adapted Restormer for Radio Map Prediction.
+"""Adapted Restormer backbone for radio-map prediction.
 
-Key change from original: inp_channels=2 (building + antenna), out_channels=1.
-The residual connection is adapted: output = model(input) + building_map_channel.
-This is physically motivated - the model learns the residual propagation pattern
-on top of the building structure.
+The network consumes a building-map channel and a transmitter-heatmap channel,
+then directly predicts one normalized radio-map channel.
 """
 
 import torch
