@@ -8,6 +8,7 @@ data:
   train_ratio: 0.7
   val_ratio: 0.15
   test_ratio: 0.15
+  split_seed: 42              # must match the corresponding L1 run
   num_workers: 4              # per process (16 workers total with 4-process DDP)
   pin_memory: true
 

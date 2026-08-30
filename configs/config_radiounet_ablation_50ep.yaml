@@ -7,6 +7,7 @@ data:
   train_ratio: 0.7
   val_ratio: 0.15
   test_ratio: 0.15
+  split_seed: 42              # must match the corresponding L1 run
   num_workers: 4
   pin_memory: true
 
@@ -62,4 +63,3 @@ metrics:
   faithfulness_top_k: [1, 5, 10, 20, 30]
   stability_noise_std: 0.01
   stability_num_samples: 10
-

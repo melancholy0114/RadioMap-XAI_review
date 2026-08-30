@@ -29,6 +29,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from datasets.radiomapseer_dataset import RadioMapSeerDataset
 from explanation import IntegratedGradients, GradCAM, OcclusionSensitivity
 from inference.infer import load_model
+from utils import get_split_seed
 
 
 def plot_single_explanation(
@@ -124,7 +125,7 @@ def run_visualization(config, checkpoint_path, num_samples=10, save_dir="outputs
         root_dir=config["data"]["root_dir"],
         gain_method=config["data"]["gain_method"],
         split="test",
-        seed=config["training"]["seed"],
+        seed=get_split_seed(config),
     )
 
     # Initialize explainers

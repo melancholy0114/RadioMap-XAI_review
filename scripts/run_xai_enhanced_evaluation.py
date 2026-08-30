@@ -39,6 +39,7 @@ from analysis.cross_method_agreement import CrossMethodAgreement
 from analysis.threshold_sensitivity import ThresholdSensitivity
 from analysis.range_conditioned_xai import RangeConditionedXAI
 from analysis.los_nlos_explanation_split import LoSNLoSExplanationSplit
+from utils import get_evaluation_seed, get_split_seed
 
 
 def parse_args():
@@ -80,7 +81,7 @@ def get_priors(building, tx_pos, img_size=256):
 
 def run_analysis(model, dataset, device, args, config):
     """Run all enhanced XAI analyses."""
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(get_evaluation_seed(config))
     n = min(args.n_samples, len(dataset))
     indices = rng.choice(len(dataset), size=n, replace=False)
 
@@ -536,7 +537,7 @@ def main():
         root_dir=config["data"]["root_dir"],
         gain_method=config["data"]["gain_method"],
         split="test",
-        seed=config["training"]["seed"],
+        seed=get_split_seed(config),
     )
 
     save_dir = args.save_dir

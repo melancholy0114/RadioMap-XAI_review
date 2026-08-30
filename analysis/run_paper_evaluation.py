@@ -32,6 +32,7 @@ from inference.infer import load_model
 from explanation import IntegratedGradients
 from metrics import Faithfulness, PhysicalAlignmentScore, Stability, Consistency
 from priors import compute_los_mask_fast, compute_obstruction_mask, compute_directional_mask
+from utils import get_evaluation_seed, get_split_seed, get_training_seed
 
 
 def parse_args():
@@ -275,7 +276,9 @@ def main():
         config = yaml.safe_load(f)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    rng = np.random.default_rng(config["training"]["seed"])
+    evaluation_seed = get_evaluation_seed(config)
+    split_seed = get_split_seed(config)
+    rng = np.random.default_rng(evaluation_seed)
 
     model = load_model(config, args.checkpoint, device)
     ig_steps = args.ig_steps or config["explainability"]["ig_steps"]
@@ -287,13 +290,13 @@ def main():
         root_dir=config["data"]["root_dir"],
         gain_method=config["data"]["gain_method"],
         split="train",
-        seed=config["training"]["seed"],
+        seed=split_seed,
     )
     test_dataset = RadioMapSeerDataset(
         root_dir=config["data"]["root_dir"],
         gain_method=config["data"]["gain_method"],
         split="test",
-        seed=config["training"]["seed"],
+        seed=split_seed,
     )
 
     id_metric_indices = rng.choice(len(train_dataset), size=min(args.id_samples, len(train_dataset)), replace=False)
@@ -367,7 +370,9 @@ def main():
     print("Aggregating results...")
     results = {
         "protocol": {
-            "seed": int(config["training"]["seed"]),
+            "training_seed": get_training_seed(config),
+            "split_seed": split_seed,
+            "evaluation_seed": evaluation_seed,
             "id_samples_prediction": int(len(id_metric_indices)),
             "ood_samples_prediction": int(len(ood_metric_indices)),
             "id_samples_explanations": int(len(id_explain_indices)),

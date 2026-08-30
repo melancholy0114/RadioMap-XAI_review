@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from datasets.radiomapseer_dataset import RadioMapSeerDataset
 from torch.utils.data import DataLoader
 from torch.amp import autocast
+from utils import get_split_seed
 
 
 def compute_prediction_metrics(model, dataloader, device):
@@ -66,7 +67,7 @@ def analyze_id_vs_ood(
     """
     os.makedirs(save_dir, exist_ok=True)
 
-    seed = config["training"]["seed"]
+    seed = get_split_seed(config)
 
     # Create datasets
     train_dataset = RadioMapSeerDataset(

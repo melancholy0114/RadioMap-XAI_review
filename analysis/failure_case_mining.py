@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 from datasets.radiomapseer_dataset import RadioMapSeerDataset
 from torch.utils.data import DataLoader
 from torch.amp import autocast
+from utils import get_split_seed
 
 
 def mine_failure_cases(
@@ -39,7 +40,7 @@ def mine_failure_cases(
         root_dir=config["data"]["root_dir"],
         gain_method=config["data"]["gain_method"],
         split="test",
-        seed=config["training"]["seed"],
+        seed=get_split_seed(config),
     )
 
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)

@@ -31,6 +31,7 @@ from explanation import IntegratedGradients, GradCAM, OcclusionSensitivity
 from visualization.plot_explanations import plot_method_comparison, plot_single_explanation
 from priors import compute_los_mask_fast, compute_obstruction_mask, compute_directional_mask
 from metrics import Faithfulness, PhysicalAlignmentScore, Stability, Consistency
+from utils import get_evaluation_seed, get_split_seed, get_training_seed
 
 
 def parse_args():
@@ -48,9 +49,10 @@ def main():
         config = yaml.safe_load(f)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    seed = config["training"]["seed"]
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    training_seed = get_training_seed(config)
+    evaluation_seed = get_evaluation_seed(config)
+    torch.manual_seed(training_seed)
+    np.random.seed(evaluation_seed)
 
     figure_dir = config["output"]["figure_dir"]
     os.makedirs(figure_dir, exist_ok=True)
@@ -81,7 +83,7 @@ def main():
         root_dir=config["data"]["root_dir"],
         gain_method=config["data"]["gain_method"],
         split="test",
-        seed=seed,
+        seed=get_split_seed(config),
     )
     n_samples = min(args.num_samples, len(test_dataset))
     indices = np.random.choice(len(test_dataset), n_samples, replace=False)

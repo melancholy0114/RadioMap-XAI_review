@@ -244,6 +244,8 @@ def get_dataloaders(
     """
     data_cfg = config["data"]
     per_process_batch_size = batch_size or config["training"]["batch_size"]
+    training_seed = int(config["training"]["seed"])
+    split_seed = int(data_cfg.get("split_seed", training_seed))
 
     train_dataset = RadioMapSeerDataset(
         root_dir=data_cfg["root_dir"],
@@ -252,7 +254,7 @@ def get_dataloaders(
         split="train",
         train_ratio=data_cfg["train_ratio"],
         val_ratio=data_cfg["val_ratio"],
-        seed=config["training"]["seed"],
+        seed=split_seed,
     )
 
     val_dataset = RadioMapSeerDataset(
@@ -262,7 +264,7 @@ def get_dataloaders(
         split="val",
         train_ratio=data_cfg["train_ratio"],
         val_ratio=data_cfg["val_ratio"],
-        seed=config["training"]["seed"],
+        seed=split_seed,
     )
 
     test_dataset = RadioMapSeerDataset(
@@ -272,12 +274,13 @@ def get_dataloaders(
         split="test",
         train_ratio=data_cfg["train_ratio"],
         val_ratio=data_cfg["val_ratio"],
-        seed=config["training"]["seed"],
+        seed=split_seed,
     )
 
-    seed = int(config["training"]["seed"])
-    train_dataset = _select_subset(train_dataset, subset_frac, seed)
-    val_dataset = _select_subset(val_dataset, subset_frac, seed + 1)
+    # Subset membership belongs to the data protocol and must not change when
+    # only the model-training seed changes.
+    train_dataset = _select_subset(train_dataset, subset_frac, split_seed)
+    val_dataset = _select_subset(val_dataset, subset_frac, split_seed + 1)
 
     train_sampler = None
     val_sampler = None
@@ -288,7 +291,9 @@ def get_dataloaders(
             num_replicas=world_size,
             rank=rank,
             shuffle=True,
-            seed=seed,
+            # The sampler order is a stochastic training effect, so it follows
+            # the training seed rather than the fixed map split seed.
+            seed=training_seed,
             drop_last=True,
         )
         val_sampler = DistributedSampler(

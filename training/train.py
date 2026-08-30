@@ -3,7 +3,6 @@
 import argparse
 from contextlib import nullcontext
 import os
-import random
 import sys
 import time
 
@@ -11,7 +10,6 @@ import time
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _PROJECT_ROOT)
 
-import numpy as np
 import torch
 import torch.distributed as dist
 from torch.amp import GradScaler, autocast
@@ -30,12 +28,35 @@ from model import (
     validate_checkpoint_model,
 )
 from training.validate import validate
+from utils import (
+    configure_seeded_run,
+    get_split_seed,
+    get_training_seed,
+    seed_everything,
+    seed_metadata,
+    validate_seed_metadata,
+)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a radio map prediction model")
     parser.add_argument("--config", type=str, default="configs/config.yaml")
     parser.add_argument("--resume", type=str, default=None, help="Checkpoint path to resume from")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Override training.seed. Explicit seeded runs are written below "
+            "seed_<N> subdirectories so repeated runs cannot overwrite each other."
+        ),
+    )
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=None,
+        help="Override the fixed train/validation/test map split seed",
+    )
     parser.add_argument("--subset", type=float, default=1.0, help="Use fraction of training data")
     parser.add_argument(
         "--gpus",
@@ -137,24 +158,26 @@ def unwrap_model(model):
     return model.module if isinstance(model, DDP) else model
 
 
-def save_checkpoint(model, optimizer, scheduler, epoch, best_val_loss, path):
+def save_checkpoint(model, optimizer, scheduler, epoch, best_val_loss, path, config):
     state = {
         "epoch": epoch,
         "model_state_dict": unwrap_model(model).state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "scheduler_state_dict": scheduler.state_dict(),
         "best_val_loss": best_val_loss,
+        **seed_metadata(config),
         **checkpoint_metadata(model),
     }
     torch.save(state, path)
 
 
-def restore_checkpoint(model, optimizer, scheduler, path, device, rank):
+def restore_checkpoint(model, optimizer, scheduler, path, device, rank, config):
     if not os.path.exists(path):
         raise FileNotFoundError(f"Checkpoint not found: {path}")
 
     checkpoint = torch.load(path, map_location=device)
     validate_checkpoint_model(checkpoint, model)
+    validate_seed_metadata(checkpoint, config)
     state_dict = normalize_state_dict(checkpoint["model_state_dict"])
     unwrap_model(model).load_state_dict(state_dict)
 
@@ -216,12 +239,13 @@ def train(
     if device is None:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    seed = int(config["training"]["seed"])
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    training_seed = get_training_seed(config)
+    split_seed = get_split_seed(config)
+    seed_everything(training_seed)
+    main_print(
+        rank,
+        f"Seeds: training={training_seed}, data_split={split_seed}",
+    )
 
     global_batch_size = int(config["training"]["batch_size"])
     if global_batch_size < 1:
@@ -285,7 +309,7 @@ def train(
     best_val_loss = float("inf")
     if resume_path:
         start_epoch, best_val_loss = restore_checkpoint(
-            model, optimizer, scheduler, resume_path, device, rank
+            model, optimizer, scheduler, resume_path, device, rank, config
         )
     if distributed:
         dist.barrier()
@@ -488,6 +512,7 @@ def train(
                     epoch,
                     best_val_loss,
                     os.path.join(checkpoint_dir, "best_model.pth"),
+                    config,
                 )
                 print(f"  -> New best model saved (val_loss: {best_val_loss:.6f})", flush=True)
             if (epoch + 1) % 5 == 0:
@@ -498,6 +523,7 @@ def train(
                     epoch,
                     best_val_loss,
                     os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch + 1}.pth"),
+                    config,
                 )
         if distributed:
             dist.barrier()
@@ -510,6 +536,7 @@ def train(
             epochs - 1,
             best_val_loss,
             os.path.join(checkpoint_dir, "final_model.pth"),
+            config,
         )
         if writer is not None:
             writer.close()
@@ -523,7 +550,12 @@ def main():
     distributed = False
     try:
         distributed, rank, world_size, local_rank, device = setup_process(args)
-        config = load_config(args.config)
+        config = configure_seeded_run(
+            load_config(args.config),
+            training_seed=args.seed,
+            split_seed=args.split_seed,
+            isolate_outputs=args.seed is not None,
+        )
         if args.resume:
             config["training"]["resume"] = args.resume
         train(

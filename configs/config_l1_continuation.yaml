@@ -1,0 +1,77 @@
+# Matched-budget plain-L1 refinement control for the major revision.
+#
+# Each run warm-starts model weights from the corresponding 50-epoch L1
+# baseline, deliberately discards the baseline optimizer/scheduler state, and
+# performs 50 additional L1 epochs.  This matches the initialization point,
+# optimizer reset, schedule, data split, batch protocol, and refinement budget
+# of Physics-L1 while changing only the loss.
+
+data:
+  root_dir: "./data"
+  gain_method: "DPM"
+  img_size: 256
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  split_seed: 42
+  num_workers: 4
+  pin_memory: true
+
+model:
+  name: "restormer"
+  inp_channels: 2
+  out_channels: 1
+  dim: 48
+  num_blocks: [4, 6, 6, 8]
+  num_refinement_blocks: 4
+  heads: [1, 2, 4, 8]
+  ffn_expansion_factor: 2.66
+  bias: false
+  LayerNorm_type: "WithBias"
+
+training:
+  batch_size: 8
+  epochs: 50
+  lr: 0.0002
+  weight_decay: 0.0001
+  scheduler: "CosineAnnealingLR"
+  T_max: 50
+  eta_min: 0.0000001
+  grad_clip: 0.01
+  grad_accum_steps: 4
+  amp_init_scale: 1.0
+  log_interval: 50
+  seed: 42
+  resume: null
+
+loss:
+  primary: "l1"
+
+output:
+  checkpoint_dir: "./outputs/l1_continuation/checkpoints"
+  log_dir: "./outputs/l1_continuation/logs"
+  prediction_dir: "./outputs/l1_continuation/predictions"
+  explanation_dir: "./outputs/l1_continuation/explanations"
+  figure_dir: "./outputs/l1_continuation/figures"
+
+evaluation:
+  seed: 42
+
+explainability:
+  methods:
+    - "integrated_gradients"
+    - "grad_cam"
+    - "occlusion_sensitivity"
+  num_samples: 50
+  ig_steps: 50
+  occlusion_stride: 8
+  occlusion_window: 16
+
+priors:
+  los_bandwidth: 3
+  directional_sectors: 8
+
+metrics:
+  faithfulness_top_k: [1, 5, 10, 20, 30]
+  stability_noise_std: 0.01
+  stability_num_samples: 10

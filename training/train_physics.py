@@ -21,7 +21,6 @@ Typical two-stage workflow:
 import argparse
 from contextlib import nullcontext
 import os
-import random
 import sys
 import time
 
@@ -49,6 +48,14 @@ from model import (
 )
 from priors.los_mask import compute_los_mask_fast
 from training.validate import validate
+from utils import (
+    configure_seeded_run,
+    get_split_seed,
+    get_training_seed,
+    seed_everything,
+    seed_metadata,
+    validate_seed_metadata,
+)
 
 
 _TRAINING_VARIANT = "physics_weighted_l1"
@@ -58,6 +65,21 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train the Physics-L1 model")
     parser.add_argument("--config", type=str, default="configs/config_ablation.yaml")
     parser.add_argument("--resume", type=str, default=None, help="Checkpoint to warm-start or resume")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Override training.seed. Explicit seeded runs are written below "
+            "seed_<N> subdirectories so repeated runs cannot overwrite each other."
+        ),
+    )
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=None,
+        help="Override the fixed train/validation/test map split seed",
+    )
     parser.add_argument(
         "--full-resume",
         "--full_resume",
@@ -215,6 +237,7 @@ def save_physics_checkpoint(
     best_val_loss,
     physics_alpha,
     path,
+    config,
 ):
     state = {
         "epoch": epoch,
@@ -225,6 +248,7 @@ def save_physics_checkpoint(
         "best_val_loss": best_val_loss,
         "training_variant": _TRAINING_VARIANT,
         "physics_alpha": physics_alpha,
+        **seed_metadata(config),
         **checkpoint_metadata(model),
     }
     torch.save(state, path)
@@ -239,12 +263,14 @@ def restore_physics_checkpoint(
     device,
     rank,
     full_resume,
+    config,
 ):
     if not os.path.exists(path):
         raise FileNotFoundError(f"Checkpoint not found: {path}")
 
     checkpoint = torch.load(path, map_location=device)
     validate_checkpoint_model(checkpoint, model)
+    validate_seed_metadata(checkpoint, config)
     unwrap_model(model).load_state_dict(
         normalize_state_dict(checkpoint["model_state_dict"])
     )
@@ -334,12 +360,13 @@ def train_physics(
     if device is None:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    seed = int(config["training"]["seed"])
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    training_seed = get_training_seed(config)
+    split_seed = get_split_seed(config)
+    seed_everything(training_seed)
+    main_print(
+        rank,
+        f"Seeds: training={training_seed}, data_split={split_seed}",
+    )
 
     global_batch_size = int(config["training"]["batch_size"])
     if global_batch_size < 1:
@@ -425,6 +452,7 @@ def train_physics(
             device,
             rank,
             full_resume,
+            config,
         )
 
     epochs = int(config["training"]["epochs"])
@@ -639,6 +667,7 @@ def train_physics(
                     best_val_loss,
                     physics_alpha,
                     os.path.join(checkpoint_dir, "best_model.pth"),
+                    config,
                 )
                 print(f"  -> New best Physics-L1 model saved (val_loss: {best_val_loss:.6f})", flush=True)
             if (epoch + 1) % 5 == 0:
@@ -651,6 +680,7 @@ def train_physics(
                     best_val_loss,
                     physics_alpha,
                     os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch + 1}.pth"),
+                    config,
                 )
         if distributed:
             dist.barrier()
@@ -665,6 +695,7 @@ def train_physics(
             best_val_loss,
             physics_alpha,
             os.path.join(checkpoint_dir, "final_model.pth"),
+            config,
         )
         if writer is not None:
             writer.close()
@@ -678,7 +709,12 @@ def main():
     distributed = False
     try:
         distributed, rank, world_size, local_rank, device = setup_process(args)
-        config = load_config(args.config)
+        config = configure_seeded_run(
+            load_config(args.config),
+            training_seed=args.seed,
+            split_seed=args.split_seed,
+            isolate_outputs=args.seed is not None,
+        )
         resume_path = args.resume or config["training"].get("resume")
         full_resume = bool(
             args.full_resume

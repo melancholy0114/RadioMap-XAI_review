@@ -166,6 +166,95 @@ overwrite one another. New checkpoints also record `model_name` and reject a
 mismatched config/checkpoint pair. Legacy checkpoints without this field remain
 compatible and are interpreted as Restormer checkpoints.
 
+## Controlled multi-seed experiments
+
+For statistical comparisons, `data.split_seed` and `training.seed` have
+different roles:
+
+- `data.split_seed` fixes train/validation/test map membership and evaluation
+  subsets. Keep it unchanged for every compared run.
+- `training.seed` changes model initialization and training data order. Vary
+  this value across at least three independently trained runs.
+
+Existing commands remain backward compatible and keep their original output
+paths. When `--seed` is supplied explicitly, all outputs are automatically
+placed in a `seed_<N>` subdirectory and checkpoints record both seeds.
+
+Run three Restormer-L1 seeds sequentially on the same four GPUs:
+
+```bash
+python scripts/run_multi_seed.py \
+  --trainer l1 \
+  --config configs/config.yaml \
+  --seeds 42 123 2026 \
+  --split-seed 42 \
+  --nproc-per-node 4 \
+  --gpus 0,1,2,3
+```
+
+The checkpoints are written to, for example,
+`outputs/checkpoints/seed_123/best_model.pth`. Train the paired Physics-L1
+warm-start runs from the matching L1 seed:
+
+```bash
+python scripts/run_multi_seed.py \
+  --trainer physics \
+  --config configs/config_ablation.yaml \
+  --seeds 42 123 2026 \
+  --split-seed 42 \
+  --resume-template 'outputs/checkpoints/seed_{seed}/best_model.pth' \
+  --nproc-per-node 4 \
+  --gpus 0,1,2,3
+```
+
+Continue each Physics-L1 run from epoch 20 to epoch 50:
+
+```bash
+python scripts/run_multi_seed.py \
+  --trainer physics \
+  --config configs/config_ablation_50ep.yaml \
+  --seeds 42 123 2026 \
+  --split-seed 42 \
+  --resume-template 'outputs/improved_checkpoints/seed_{seed}/final_model.pth' \
+  --full-resume \
+  --nproc-per-node 4 \
+  --gpus 0,1,2,3
+```
+
+Use the same commands with `config_radiounet*.yaml` and the corresponding
+`outputs/radiounet_c/.../seed_<N>` paths for RadioUNet. The launcher runs seeds
+sequentially; add `--dry-run` to inspect every generated `torchrun` command.
+
+After training, evaluate every checkpoint on the identical full test split:
+
+```bash
+python analysis/evaluate_multiseed.py \
+  --config configs/config.yaml \
+  --seeds 42 123 2026 \
+  --checkpoint-template 'outputs/checkpoints/seed_{seed}/best_model.pth' \
+  --output outputs/multiseed/restormer_l1_test.json
+
+python analysis/evaluate_multiseed.py \
+  --config configs/config_ablation_50ep.yaml \
+  --seeds 42 123 2026 \
+  --checkpoint-template 'outputs/improved_checkpoints/seed_{seed}/best_model.pth' \
+  --output outputs/multiseed/restormer_physics_l1_test.json
+```
+
+Each result reports per-seed metrics, per-map metrics, mean, sample standard
+deviation, and a two-sided 95% Student-t confidence interval. Compare paired
+L1/Physics-L1 runs by matching both seed and test map:
+
+```bash
+python analysis/compare_multiseed.py \
+  --baseline outputs/multiseed/restormer_l1_test.json \
+  --candidate outputs/multiseed/restormer_physics_l1_test.json \
+  --output outputs/multiseed/restormer_l1_vs_physics.json
+```
+
+Do not use `--limit-samples` for manuscript results; it exists only for a quick
+evaluation smoke test.
+
 Run inference with a trained checkpoint:
 
 ```bash

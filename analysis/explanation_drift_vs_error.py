@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from datasets.radiomapseer_dataset import RadioMapSeerDataset
 from torch.utils.data import DataLoader
 from torch.amp import autocast
+from utils import get_evaluation_seed, get_split_seed
 
 
 def compute_sample_error(model, sample, device):
@@ -67,7 +68,7 @@ def analyze_drift_vs_error(
     """
     os.makedirs(save_dir, exist_ok=True)
 
-    seed = config["training"]["seed"]
+    seed = get_split_seed(config)
 
     train_dataset = RadioMapSeerDataset(
         root_dir=config["data"]["root_dir"],
@@ -84,8 +85,9 @@ def analyze_drift_vs_error(
     n_train = min(n_samples, len(train_dataset))
     n_test = min(n_samples, len(test_dataset))
 
-    train_indices = np.random.choice(len(train_dataset), n_train, replace=False)
-    test_indices = np.random.choice(len(test_dataset), n_test, replace=False)
+    rng = np.random.default_rng(get_evaluation_seed(config))
+    train_indices = rng.choice(len(train_dataset), n_train, replace=False)
+    test_indices = rng.choice(len(test_dataset), n_test, replace=False)
 
     # Compute explanations and errors for train samples
     print("Computing train explanations and errors...")

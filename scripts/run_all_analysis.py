@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import yaml
 import argparse
 import torch
-import numpy as np
 import json
 
 from inference.infer import load_model
@@ -23,6 +22,7 @@ from analysis.id_vs_ood_analysis import analyze_id_vs_ood
 from analysis.failure_case_mining import mine_failure_cases
 from analysis.explanation_drift_vs_error import analyze_drift_vs_error
 from explanation.integrated_gradients import IntegratedGradients
+from utils import get_evaluation_seed, seed_everything
 
 
 def main():
@@ -35,9 +35,7 @@ def main():
         config = yaml.safe_load(f)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    seed = config["training"]["seed"]
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    seed_everything(get_evaluation_seed(config))
 
     print("Loading model...")
     model = load_model(config, args.checkpoint, device)

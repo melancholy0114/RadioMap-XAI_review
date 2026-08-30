@@ -18,6 +18,7 @@ from model import build_model, normalize_state_dict, validate_checkpoint_model
 from datasets.radiomapseer_dataset import RadioMapSeerDataset
 from torch.utils.data import DataLoader
 from torch.amp import autocast
+from utils import get_split_seed
 
 
 def parse_args():
@@ -125,7 +126,7 @@ if __name__ == "__main__":
         root_dir=config["data"]["root_dir"],
         gain_method=config["data"]["gain_method"],
         split="test",
-        seed=config["training"]["seed"],
+        seed=get_split_seed(config),
     )
 
     results = run_inference(model, dataset, device, args.num_samples, args.save_dir)
